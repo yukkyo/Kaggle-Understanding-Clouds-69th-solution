@@ -1,0 +1,143 @@
+General:
+    comment: Sample config file
+    workdir: ../output/model/model_sample
+    seed: 20
+    fp16: True
+    # Compile level for AMP
+    amp_level: O2
+    # ddp, ddp2, dp, none
+    multi_gpu_mode: ddp
+    labels: [Fish, Flower, Gravel, Sugar]
+    gpus: [0, 1, 2, 3]
+    epoch: 5
+    grad_acc: 1
+    debug: False
+
+Data:
+    dataset:
+        # num_class is 5 if including background class, else 4
+        # if use background class, class 0 is background
+        background_class: True
+        train_df: ../input/train_5kfold.csv
+        train_img_dir: ../input/train_images
+        test_df: ../input/sample_submission.csv
+        test_img_dir: ../input/test_images
+        img_height: 1024
+        img_width: 1024
+        # kfold is overwritten in train.py
+        kfold: -1
+    dataloader:
+        batch_size: 8
+        num_workers: 8
+        train:
+            use_sampler: True
+            change_rate_sampler: False
+            max_pos_rate: 1.0
+        valid:
+            use_sampler: True
+        test:
+            use_sampler: False
+
+Model:
+    # 'resnet50', 'efficientnet-b3', 'efficientnet-b4', 'seresnext50', 'resnet34', 'efficientnet-b5'
+    encoder: resnet34
+    # model_arch: unet, msunet, clsunet
+    model_arch: unet
+    in_channel: 3
+    out_channel: 5
+    pretrained: True
+    decoder:
+        attention: cbam
+    hypercolumn: True
+    output: softmax
+
+Optimizer:
+    optimizer: Adam
+    init_lr: !!python/float 1e-4
+    lr_scheduler:
+        name: CosineAnnealingLR
+        params:
+            T_max: 30
+            eta_min: !!python/float 1e-5
+            last_epoch: -1
+
+Metrics:
+    - name: SampleDice
+      params:
+          p1: 1
+          p2: 2
+    - name: Dice
+      params:
+          p1: 1
+          p2: 2
+
+Loss:
+    base_loss:
+        name: BCEDiceLoss
+        params:
+            alpha: 0.7
+            softmax: True
+    # wrapper_loss: DiceScoreL2LossWrapper, ClsLossWrapper
+#    wrapper_loss:
+#        name: ClsLossWrapper
+#        params:
+#            alpha: 0.1
+#            use_focal: True
+#            use_class0_cls: True
+
+Augmentation:
+    # tta: hflip, vflip
+    tta: [hflip]
+    train:
+        - name: HorizontalFlip
+          params:
+              p: 0.5
+        - name: VerticalFlip
+          params:
+              p: 0.5
+        - name: ShiftScaleRotate
+          params:
+              p: 0.5
+              rotate_limit: 20
+              shift_limit: 0.05
+              scale_limit: 0.05
+#        - name: Compose
+#          member:
+#              - name: CenterCrop
+#                params:
+#                    p: 1.
+#                    height: 614
+#                    width: 819
+#              - name: Resize
+#                params:
+#                    p: 1.
+#                    height: 1024
+#                    width: 1024
+#          params:
+#              p: 0.5
+        - name: OneOf
+          member:
+              - name: ElasticTransform
+                params:
+                    alpha: 120
+                    sigma: 6
+                    alpha_affine: 3.6
+              - name: GridDistortion
+              - name: OpticalDistortion
+                params:
+                    distort_limit: 0.1
+                    shift_limit: 0.1
+          params:
+              p: 0.5
+        - name: RandomSizedCrop
+          params:
+              min_max_height: !!python/object/apply:eval [ '(int(1024 * 0.8), 1024)' ]
+              height: 1024
+              width: 1024
+              # width / height
+              w2h_ratio: !!python/object/apply:eval [ '1024 / 1024' ]
+              interpolation: 1
+              p: 0.5
+        - name: ToTensorV2
+    valid:
+        - name: ToTensorV2
