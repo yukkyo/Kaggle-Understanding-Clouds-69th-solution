@@ -1,6 +1,8 @@
 import argparse
 import torch
 import torch.nn.functional as F
+import cv2
+import numpy as np
 from pathlib import Path
 from tqdm import tqdm
 
@@ -14,9 +16,28 @@ Search best thresholds for each class if args.find_thresholds == True
 """
 
 
+def post_process(probability, threshold, min_size):
+    """
+    Post processing of each predicted mask, components with lesser number of pixels
+    than `min_size` are ignored
+    """
+    # don't remember where I saw it
+    mask = cv2.threshold(probability, threshold, 1, cv2.THRESH_BINARY)[1]
+    num_component, component = cv2.connectedComponents(mask.astype(np.uint8))
+    predictions = np.zeros((350, 525), np.float32)
+    num = 0
+    for c in range(1, num_component):
+        p = (component == c)
+        if p.sum() > min_size:
+            predictions[p] = 1
+            num += 1
+    return predictions, num
+
+
 class Verifier:
     def __init__(self, model, dataloader, metrics_func, out_channel,
-                 mask_score=False, fp16=False, tta_flip=False, softmax=False, remove_black_area=False):
+                 mask_score=False, fp16=False, tta_flip=False, softmax=False, remove_black_area=False,
+                 pickle_preds_path=None):
         self.model = model
         self.dataloader = dataloader
         self.metrics_func = metrics_func
@@ -26,6 +47,7 @@ class Verifier:
         self.softmax = softmax
         self.out_channel = out_channel
         self.remove_black_area = remove_black_area
+        self.pickle_preds_path = pickle_preds_path
 
         # Model & GPU setting
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -34,7 +56,16 @@ class Verifier:
         self.model = self.model.to(self.device)
         self.model.eval()  # Caution: this code change bn output ?
 
-        self.all_preds, self.all_masks = self._make_preds()
+        self.test_height = 350
+        self.test_width = 525
+
+        if pickle_preds_path is not None:
+            print(f'Load preds objects')
+            self.all_preds, self.all_masks = self._load_pickle_preds()
+        else:
+            print(f'Make preds')
+            self.all_preds, self.all_masks = self._make_preds()
+            print(f'Save pickle obj')
 
     def _make_preds(self):
         all_preds = list()
@@ -74,16 +105,28 @@ class Verifier:
                     preds_flip = preds_flip.flip(3)
                     preds = (preds + preds_flip) / 2.
 
-                if self.softmax:
-                    preds = F.one_hot(preds.argmax(dim=1),
-                                      self.out_channel).transpose(2, 3).transpose(1, 2).float()
-
                 if self.remove_black_area:
                     # BATCH x CH x H x W -> BATCH x H x W -> BATCH x 1 x H x W
                     not_black = (img.sum(dim=1) > 0.).unsqueeze(1).float()
                     preds = not_black * preds
-                all_preds.append(preds.cpu())
-                all_masks.append(gt_mask.cpu())
+
+                # BATCH x CH x H x W -> BATCH x H x W x CH
+                bs = preds.size(0)
+                cls_num = gt_mask.size(1)
+                preds = preds.permute((0, 2, 3, 1)).cpu().numpy()
+                gt_mask = gt_mask.permute((0, 2, 3, 1)).cpu().numpy()
+
+                preds_new = np.zeros((bs, self.test_height, self.test_width, self.out_channel))
+                gt_mask_new = np.zeros((bs, self.test_height, self.test_width, cls_num))
+
+                for i in range(bs):
+                    preds_new[i] = cv2.resize(
+                        preds[i], (self.test_width, self.test_height), interpolation=cv2.INTER_LINEAR)
+                    mask_tmp = cv2.resize(
+                        gt_mask[i].astype(np.float32), (self.test_width, self.test_height), interpolation=cv2.INTER_LINEAR)
+                    gt_mask_new[i] = mask_tmp
+                all_preds.append(preds_new)
+                all_masks.append(gt_mask_new)
         return all_preds, all_masks
 
     def valid_thres(self, func_args):
@@ -91,6 +134,18 @@ class Verifier:
 
         with torch.no_grad():
             for preds, gt_mask in tqdm(zip(self.all_preds, self.all_masks), total=len(self.dataloader)):
+                # post_process
+                bs = len(preds)
+                for i in range(bs):
+                    for j in range(self.out_channel):
+                        preds_tmp = preds[i, :, :, j]
+                        preds_tmp2, num_predict = post_process(preds_tmp, 0.4, 10000)
+                        preds[i, :, :, j] = preds_tmp2
+
+                # BATCH x H x W x CH -> BATCH x CH x H x W
+                preds = torch.Tensor(preds).permute((0, 3, 1, 2))
+                gt_mask = torch.Tensor(gt_mask).permute((0, 3, 1, 2))
+
                 preds = preds.to(self.device)
                 gt_mask = gt_mask.to(self.device)
 
@@ -157,31 +212,18 @@ def main():
         metrics_func=dice_nomask,
         mask_score=(cfg.Model.model_arch in {'msunet', 'clsunet'}),
         fp16=cfg.General.fp16,
-        # TODO enable to input some ttas as List
-        # tta_flip=('flip' in cfg.Augmentation.tta),
-        tta_flip=True,
+        tta_flip=('hflip' in cfg.Augmentation.tta),
         out_channel=cfg.Model.out_channel,
         softmax=(cfg.Model.output == 'softmax'),
-        # TODO add config
-        remove_black_area=True
+        remove_black_area=cfg.Eval.remove_black_area
     )
 
     logger_main.info('Start eval !')
-    # top_thresholds_tmp = [0.5] * 4
-    # min_contours_tmp = [256] * 4
-    # bottom_thresholds_tmp = [0.4] * 4
-    #
-    # func_args_tmp = {
-    #     'num_class': n_class,
-    #     'top_score_thresholds': top_thresholds_tmp,
-    #     'min_contour_areas': min_contours_tmp,
-    #     'bottom_score_thresholds': bottom_thresholds_tmp,
-    #     'skip_first_channel': n_class < cfg.Model.out_channel
-    # }
     func_args_tmp = {
         'num_class': n_class,
         'threshold': 0.5,
-        'skip_first_class': n_class < cfg.Model.out_channel
+        'skip_first_class': n_class < cfg.Model.out_channel,
+        'min_contour_area': 0  # threshold by post process
     }
 
     for k, v in func_args_tmp.items():
