@@ -88,6 +88,30 @@ def dice_pos_neg(preds, labels, num_class=4,
     return dices, dices_pos, dices_neg
 
 
+def dice_pytorch(preds, targets, noise_thr: int = 0):
+    """
+    https://www.kaggle.com/iafoss/hypercolumns-pneumothorax-fastai-0-831-lb
+    logits: Batchsize x 1 x H x W
+    targets: Batchsize x 1 x H x W
+    """
+    eps = 1e-8
+    sum_dim = (2, 3)
+
+    # remove noisable preds
+    preds_sum = preds.sum(sum_dim)  # Batchsize x 1
+    preds[preds_sum < noise_thr] = 0
+
+    # intersect
+    intersect = (preds * targets).sum(sum_dim).float()  # Batchsize x 1
+
+    # union = |A| + |B|
+    union = (preds + targets).sum(sum_dim).float()  # Batchsize x 1
+
+    # dice
+    dice = (2.0 * intersect + eps) / (union + eps)  # Batchsize x 1
+    return dice
+
+
 def dice_nomask(preds, labels, num_class=5, threshold=0.5,
                 skip_first_class=False, min_contour_area=1024):
     """Normal dice"""

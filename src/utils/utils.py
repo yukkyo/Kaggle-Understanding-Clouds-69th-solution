@@ -5,30 +5,53 @@ import torch
 import logging
 from pathlib import Path
 import shutil
+from typing import List
 
 
-def rles_to_mask(rles, non_mask_class=False, num_class=4, img_size=(1400, 2100)):
-    n_class = num_class + int(non_mask_class)
-    mask_size = (*img_size, n_class)
-    masks = np.zeros(mask_size, dtype=np.float32)  # float32 is V.Imp
-    # 4:class 1～4 (ch:0 - 3)
+def rle_decode(mask_rle: str = '', shape: tuple = (1400, 2100)):
+    """
+    Decode rle encoded mask.
+
+    :param mask_rle: run-length as string formatted (start length)
+    :param shape: (height, width) of array to return
+    Returns numpy array, 1 - mask, 0 - background
+    """
+    s = mask_rle.split()
+    starts, lengths = [np.asarray(x, dtype=int) for x in (s[0:][::2], s[1:][::2])]
+    starts -= 1
+    ends = starts + lengths
+    img = np.zeros(shape[0] * shape[1], dtype=np.uint8)
+    for lo, hi in zip(starts, ends):
+        img[lo:hi] = 1
+    return img.reshape(shape, order='F')
+
+
+def make_mask_from_rles(rles: List[str], shape: tuple = (1400, 2100)):
+    """
+    Create mask based on df, image name and shape.
+    TODO check making empty mask
+    """
+    masks = np.zeros((shape[0], shape[1], 4), dtype=np.float32)
 
     for idx, label in enumerate(rles):
-        if non_mask_class:
-            idx += 1
-        if isinstance(label, str):
-            # if label is not np.nan:
-            label = label.split(" ")
-            positions = map(int, label[0::2])
-            length = map(int, label[1::2])
-            mask = np.zeros(img_size[0] * img_size[1], dtype=np.uint8)
-            for pos, le in zip(positions, length):
-                mask[pos:(pos + le)] = 1
-            masks[:, :, idx] = mask.reshape(img_size, order='F')
+        if label is not np.nan:
+            mask = rle_decode(label)
+            masks[:, :, idx] = mask
 
-    if non_mask_class:
-        masks[:, :, 0] = 1. - masks[:, :, 1:].sum(axis=2)
     return masks
+
+
+def mask2rle(img):
+    """
+    Convert mask to rle.
+    img: numpy array, 1 - mask, 0 - background
+    Returns run length as string formated
+    """
+    pixels = img.T.flatten()
+    pixels = np.concatenate([[0], pixels, [0]])
+    runs = np.where(pixels[1:] != pixels[:-1])[0] + 1
+    runs[1::2] -= runs[::2]
+    return ' '.join(str(x) for x in runs)
 
 
 def seed_everything(seed=73):
@@ -64,8 +87,6 @@ def setup_logger(logger_name, log_file, level=logging.INFO, null_format=False):
 
 
 def src_backup(input_dir: Path, output_dir: Path):
-    print("* src Backup start !")
     for src_path in input_dir.glob("**/*.py"):
         new_path = output_dir / src_path.name
         shutil.copy2(str(src_path), str(new_path))
-    print("* src Backup end !")

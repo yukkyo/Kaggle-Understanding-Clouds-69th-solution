@@ -4,7 +4,7 @@ import pandas as pd
 from tqdm import tqdm
 from torch.utils.data import Dataset
 
-from utils import rles_to_mask
+from utils import make_mask_from_rles
 
 
 BAD_IMAGE_IDS = {
@@ -28,7 +28,7 @@ BAD_IMAGE_IDS = {
 
 class CloudDataset(Dataset):
     def __init__(self, df_path, img_dir, alb_transforms, img_height=1400, img_width=2100,
-                 kfold=1, phase='train', background_class=False, debug=False, remove_bad_img=False):
+                 kfold=1, phase='train', background_class=False, debug=False, remove_bad_img=True):
         assert phase in {'train', 'valid', 'test'}, f"phase must be train or valid or test, but got {phase}"
 
         self.df_path = df_path
@@ -42,42 +42,41 @@ class CloudDataset(Dataset):
 
         self.background_class = background_class
         self.label_def = ['Fish', 'Flower', 'Gravel', 'Sugar']
-        self.num_class = 4
+        self.rle_row_names = [f'EncodedPixels_{i + 1}' for i in range(len(self.label_def))]
 
         # ImageId, kfold, EncodedPixels_1, EncodedPixels_2, EncodedPixels_3, EncodedPixels_4
         self.df = pd.read_csv(self.df_path)
 
-        if remove_bad_img:
-            self.df = self.df[~self.df.ImageId.isin(BAD_IMAGE_IDS)]
+        # fill na
+        d_tmp = dict(zip(self.rle_row_names, [''] * 4))
+        self.df = self.df.fillna(d_tmp)
 
         if debug:
             self.df = self.df[:200]
 
         if phase == 'train':
             self.df = self.df[self.df.kfold != kfold].reset_index(drop=True)
+            if remove_bad_img:
+                self.df = self.df[~self.df.ImageId.isin(BAD_IMAGE_IDS)].copy()
         elif phase == 'valid':
             self.df = self.df[self.df.kfold == kfold].reset_index(drop=True)
 
-        self.labels = list()
         if phase in {'train', 'valid'}:
-            nas = [self.df[f'EncodedPixels_{i + 1}'].isna() for i in range(self.num_class)]
+            # self.label is used for sampler which change for each epoch
+            nas = [self.df[rowname].isna() for rowname in self.rle_row_names]
             is_any_exists = sum(nas)
             self.labels = [1 if x > 0 else 0 for x in is_any_exists]
-
-        if phase == 'test':
-            self.img_ids = self.df.Image_Label.map(lambda x: x.split('_')[0]).unique().tolist()
-        else:
             self.img_ids = self.df.ImageId.tolist()
-        self.img_paths = [os.path.join(self.img_dir, img_id) for img_id in self.img_ids]
 
-        if phase != 'test':
             self.rles = list()
-            row_names = [f'EncodedPixels_{i+1}' for i in range(self.num_class)]
             for _, row in tqdm(self.df.iterrows()):
-                rle_tmp = list()
-                for r_name in row_names:
-                    rle_tmp.append(row[r_name])
-                self.rles.append(rle_tmp)
+                rles_tmp = [row[rowname] for rowname in self.rle_row_names]
+                self.rles.append(rles_tmp)
+        else:
+            self.labels = list()
+            self.img_ids = self.df.Image_Label.map(lambda x: x.split('_')[0]).unique().tolist()
+
+        self.img_paths = [os.path.join(self.img_dir, img_id) for img_id in self.img_ids]
 
         print(f"{self.phase} len(self.img_paths): {len(self.img_paths)}")
 
@@ -86,9 +85,10 @@ class CloudDataset(Dataset):
 
         if self.phase == 'test':
             img = self.transforms(image=img)["image"]
-            return img, self.img_ids[idx]
+            return img.float(), self.img_ids[idx]
 
-        mask = self.get_mask(idx)
+        # TODO check use or not use empty class
+        mask = make_mask_from_rles(self.rles[idx])
 
         # Augmentation
         augmented = self.transforms(image=img, mask=mask)
@@ -102,11 +102,6 @@ class CloudDataset(Dataset):
 
     def get_img(self, idx):
         img_path = self.img_paths[idx]
-        img = cv2.imread(img_path).astype(float)
-        img = cv2.resize(img, (self.img_width, self.img_height))
+        img = cv2.imread(img_path)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         return img
-
-    def get_mask(self, idx):
-        mask = rles_to_mask(self.rles[idx], non_mask_class=self.background_class)
-        mask = cv2.resize(mask, (self.img_width, self.img_height))
-        return mask
