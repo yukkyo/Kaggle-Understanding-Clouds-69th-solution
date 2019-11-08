@@ -84,6 +84,10 @@ Loss:
 #            alpha: 0.1
 #            use_focal: True
 #            use_class0_cls: True
+#        name: DiceScoreL2LossWrapper
+#        params:
+#            alpha: 0.2
+#            use_focal: True
 
 Augmentation:
     # tta: hflip, vflip

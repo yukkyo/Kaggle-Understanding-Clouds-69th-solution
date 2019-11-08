@@ -55,6 +55,9 @@ Optimizer:
             eta_min: !!python/float 5e-6
             last_epoch: -1
 
+Eval:
+    remove_black_area: False
+
 Metrics:
     - name: SampleDice
       params:
