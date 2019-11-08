@@ -1,6 +1,6 @@
 General:
     comment: Test cls unet efficientnet-b4
-    workdir: ../output/model/model007
+    workdir: ../output/model/model008
     seed: 42
     fp16: True
     amp_level: O2
@@ -37,7 +37,7 @@ Model:
     # 'resnet50', 'efficientnet-b3', 'efficientnet-b4', 'seresnext50', 'resnet34', 'efficientnet-b5'
     encoder: efficientnet-b4
     # model_arch: unet, msunet, clsunet, msclsunet
-    model_arch: clsunet
+    model_arch: msunet
     in_channel: 3
     out_channel: 4
     pretrained: True
@@ -70,14 +70,14 @@ Loss:
 #            softmax: False
     wrapper_loss:
         # wrapper_loss: DiceScoreL2LossWrapper, ClsLossWrapper
-#        - name: DiceScoreL2LossWrapper
-#          params:
-#              alpha: 0.2
-        - name: ClsLossWrapper
+        - name: DiceScoreL2LossWrapper
           params:
               alpha: 0.2
-              use_focal: True
-              use_class0_cls: True
+#        - name: ClsLossWrapper
+#          params:
+#              alpha: 0.2
+#              use_focal: True
+#              use_class0_cls: True
 
 Augmentation:
     # tta: hflip, vflip

@@ -11,7 +11,7 @@ source /etc/profile.d/modules.sh
 # Make env
 module load python/3.6/3.6.5
 module load cuda/10.1/10.1.243
-source ~/lib/pyenv/kaggle_siim/bin/activate
+source ~/lib/pyenv/kaggle_cloud/bin/activate
 
 # Source directory(ABCI)
 cd ~/kaggle/cloud-organization-2019/src
