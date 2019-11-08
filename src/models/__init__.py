@@ -18,5 +18,8 @@ def select_seg_model(model_arch: str,
     elif model_arch == 'clsunet':
         args_model.update({'num_class_cls': num_class_cls})
         return ClsUNet(**args_model)
+    elif model_arch == 'msclsunet':
+        args_model.update({'num_class_cls': num_class_cls})
+        return MSClsUNet(**args_model)
     else:
         raise NotImplementedError

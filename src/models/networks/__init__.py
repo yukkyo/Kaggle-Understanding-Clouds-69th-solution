@@ -1,1 +1,1 @@
-from .unet import UNet, MSUNet, ClsUNet
+from .unet import UNet, MSUNet, ClsUNet, MSClsUNet

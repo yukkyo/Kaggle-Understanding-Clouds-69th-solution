@@ -1,11 +1,11 @@
 import yaml
-from addict import Dict
+import torch
 import albumentations as alb
 import albumentations.pytorch as albp
-import torch
+from addict import Dict
 
 from loss_funcs import *
-from datasets import CloudDataset, DistributedChangeRateSampler
+from datasets import CloudDataset, DistributedChangeRateSampler, RandomInputBlack
 from models import select_seg_model
 
 """
@@ -13,7 +13,7 @@ Functions for converting config to each object
 """
 
 
-def get_transform(conf_augmentation):
+def get_transform(conf_augmentation, img_height, img_width):
     def get_object(trans):
         if trans.name in {'Compose', 'OneOf'}:
             augs_tmp = [get_object(aug) for aug in trans.member]
@@ -21,13 +21,18 @@ def get_transform(conf_augmentation):
 
         if hasattr(alb, trans.name):
             return getattr(alb, trans.name)(**trans.params)
-        elif hasattr(albp, trans.name):
-            return getattr(albp, trans.name)(**trans.params)
         else:
             return eval(trans.name)(**trans.params)
 
-    augs = [get_object(aug) for aug in conf_augmentation]
-    return alb.Compose(augs, p=1.)
+    if conf_augmentation is None:
+        augs = list()
+    else:
+        augs = [get_object(aug) for aug in conf_augmentation]
+    augs.extend([
+        alb.Resize(height=img_height, width=img_width),
+        albp.ToTensorV2()
+    ])
+    return alb.Compose(augs)
 
 
 def get_dataset(conf, transforms, phase='train'):
@@ -60,7 +65,9 @@ def get_dataloader(conf, phase='train'):
     assert phase in {'train', 'valid', 'test'}
 
     conf_aug = conf.Augmentation[phase]
-    transforms = get_transform(conf_aug)
+    img_height = conf.Data.dataset.img_height
+    img_width = conf.Data.dataset.img_width
+    transforms = get_transform(conf_aug, img_height=img_height, img_width=img_width)
 
     ds = get_dataset(conf, transforms=transforms, phase=phase)
 
@@ -103,11 +110,10 @@ def get_dataloader(conf, phase='train'):
 
 def get_model(conf):
     num_class = len(conf.General.labels)
-    add_extra_cls = conf.Data.dataset.background_class
     model = select_seg_model(
         model_arch=conf.Model.model_arch,
         encoder_type=conf.Model.encoder,
-        num_class_seg=num_class + int(add_extra_cls),
+        num_class_seg=conf.Model.out_channel,
         num_class_cls=num_class,
         pretrained=conf.Model.pretrained
     )
@@ -118,8 +124,11 @@ def get_loss(conf):
     conf_base = conf.Loss.base_loss
     ret_loss = eval(conf_base.name)(**conf_base.params)
     if len(conf.Loss.wrapper_loss) > 0:
-        conf_wrapper = conf.Loss.wrapper_loss
-        ret_loss = eval(conf_wrapper.name)(ret_loss, **conf_wrapper.params)
+        conf_wrappers = conf.Loss.wrapper_loss
+        # conf_wrapper = conf.Loss.wrapper_loss
+        for conf_wrapper in conf_wrappers:
+            ret_loss = eval(conf_wrapper.name)(ret_loss, **conf_wrapper.params)
+    print(ret_loss)
     return ret_loss
 
 
@@ -134,14 +143,6 @@ def get_optimizer(conf):
         conf_optim.lr_scheduler.name
     )
     return optimizer_cls, scheduler_cls
-
-
-def get_metrics(conf):
-    """
-    return multi metrics
-    """
-    print(conf)
-    pass
 
 
 def read_yaml(fpath='./configs/sample.yaml'):

@@ -172,7 +172,10 @@ class DiceScoreL2LossWrapper(nn.Module):
         self.ms_loss = DiceScoreL2Loss()
 
     def forward(self, outputs, masks_gt):
-        logit, mask_score_logit = outputs
+        *logit, mask_score_logit = outputs
+        if len(logit) == 1:
+            logit = logit[0]
+
         loss = self.base_loss(logit, masks_gt)
         loss += self.alpha * self.ms_loss(logit, mask_score_logit, masks_gt)
         return loss
@@ -242,7 +245,9 @@ class ClsLossWrapper(nn.Module):
         self.pool = nn.AdaptiveMaxPool2d(1)
 
     def forward(self, outputs, masks_gt):
-        logit, logit_cls = outputs
+        *logit, logit_cls = outputs
+        if len(logit) == 1:
+            logit = logit[0]
         loss = self.base_loss(logit, masks_gt)
 
         if not self.use_class0_cls:

@@ -49,7 +49,6 @@ class UNet(nn.Module):
         assert att_type is None or att_type in {'cbam'}
         self.basemodel, self.planes = select_basemodel(model_name, pretrained=pretrained)
 
-        # TODO use ASPP ?
         self.center = nn.Sequential(
             ConvBnRelu2d(self.planes[3], self.planes[3], kernel_size=3, padding=1),
             ConvBnRelu2d(self.planes[3], self.planes[2], kernel_size=3, padding=1),
@@ -107,7 +106,7 @@ class MSUNet(UNet):
         self.ms_head = MaskScoringHead(
             in_feature_ch=self.base_ch*5,
             num_classes=out_channel,
-            mask_feature_size=(8, 48),
+            mask_feature_size=(16, 32),
         )
 
     def forward(self, x):
@@ -190,3 +189,46 @@ class ClsUNet(UNet):
         logit = self.final(f)
         logit_cls = self.cls_head(e5)
         return logit, logit_cls
+
+
+class MSClsUNet(UNet):
+    """UNet with Classification Head and Mask-Scoring Head"""
+    def __init__(self, model_name, out_channel,
+                 att_type='cbam', reduction=16, pretrained=True, num_class_cls=4):
+        super(MSClsUNet, self).__init__(
+            model_name=model_name, out_channel=out_channel,
+            att_type=att_type, reduction=reduction, pretrained=pretrained
+        )
+
+        # Sometimes, num_class != out_channel
+        self.num_class_cls = num_class_cls
+        self.cls_head = ClsHead(in_ch=self.planes[3], num_classes=num_class_cls)
+
+        self.ms_head = MaskScoringHead(
+            in_feature_ch=self.base_ch*5,
+            num_classes=out_channel,
+            mask_feature_size=(16, 32),
+        )
+
+    def forward(self, x):
+        e2, e3, e4, e5 = self.basemodel(x)
+
+        c = self.center(e5)
+
+        d5 = self.decoder5(torch.cat([c,  e5], 1))
+        d4 = self.decoder4(torch.cat([d5, e4], 1))
+        d3 = self.decoder3(torch.cat([d4, e3], 1))
+        d2 = self.decoder2(torch.cat([d3, e2], 1))
+        d1 = self.decoder1(d2)
+
+        f = torch.cat((
+            d1,
+            F.interpolate(d2, scale_factor=2,  mode='bilinear', align_corners=False),
+            F.interpolate(d3, scale_factor=4,  mode='bilinear', align_corners=False),
+            F.interpolate(d4, scale_factor=8,  mode='bilinear', align_corners=False),
+            F.interpolate(d5, scale_factor=16, mode='bilinear', align_corners=False),
+        ), 1)
+        logit = self.final(f)
+        logit_cls = self.cls_head(e5)
+        logit_ms = self.ms_head(f, logit)
+        return logit, logit_ms, logit_cls
