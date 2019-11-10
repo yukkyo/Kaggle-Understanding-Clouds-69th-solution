@@ -1,15 +1,13 @@
 import argparse
 import torch
-import torch.nn.functional as F
-import cv2
 import numpy as np
 from pathlib import Path
 from tqdm import tqdm
-from functools import partial
 from itertools import product
 
 from factory import read_yaml, get_model, get_dataloader
 from utils import src_backup, setup_logger, dice_pos_neg, dice_nomask
+from trainer import LightningModuleSeg
 
 
 """
@@ -19,42 +17,24 @@ Search best thresholds for each class if args.find_thresholds == True
 
 
 class Verifier:
-    def __init__(self, model, dataloader, metrics_func, out_channel,
-                 mask_score=False, fp16=False, tta_flip=False, softmax=False,
-                 pickle_preds_path=None):
-        self.model = model
+    def __init__(self, pl_model, dataloader, metrics_func, fp16=False):
+        self.pl_model = pl_model
         self.dataloader = dataloader
         self.metrics_func = metrics_func
-        self.mask_score = mask_score
         self.fp16 = fp16
-        self.tta_flip = tta_flip
-        self.softmax = softmax
-        self.out_channel = out_channel
-        self.remove_black_area = False
-        self.pickle_preds_path = pickle_preds_path
-        self.use_max = True
 
         # Model & GPU setting
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         if self.fp16:
-            self.model = self.model.half()
-        self.model = self.model.to(self.device)
-        self.model.eval()  # Caution: this code change bn output ?
+            self.pl_model.net = self.pl_model.net.half()
+        self.pl_model.net = self.pl_model.net.to(self.device)
+        self.pl_model.net.eval()  # Caution: this code change bn output ?
 
-        self.test_height = 350
-        self.test_width = 525
-
-        if pickle_preds_path is not None:
-            print(f'Load preds objects')
-            self.all_preds, self.all_masks = self._load_pickle_preds()
-        else:
-            print(f'Make preds')
-            self.all_preds, self.all_masks = self._make_preds()
-            print(f'Save pickle obj')
+        self._make_preds()
 
     def _make_preds(self):
-        all_preds = list()
-        all_masks = list()
+        self.all_preds = list()
+        self.all_masks = list()
 
         with torch.no_grad():
             for batch in tqdm(self.dataloader, total=len(self.dataloader)):
@@ -62,117 +42,23 @@ class Verifier:
                 if self.fp16:
                     img = img.half()
                     gt_mask = gt_mask.half()
-
                 img = img.to(self.device)
                 gt_mask = gt_mask.to(self.device)
 
-                # Predict
-                logits = self.model(img)
-                if self.mask_score:
-                    logits = logits[0]  # mask score unet return logits,mask_score
+                # Predict and Test Time Augmentation
+                _, preds, preds_cls = self.pl_model.pred_imgs(img)
+                preds, preds_cls = self.pl_model.apply_tta(img, preds, preds_cls)
 
-                if self.softmax:
-                    # softmax channel-wise
-                    preds = torch.softmax(logits, dim=1).float()
-                else:
-                    preds = torch.sigmoid(logits)
+                self.all_preds.append(preds)
+                self.all_masks.append(gt_mask)
 
-                # Test Time Augmentation
-                if self.tta_flip:
-                    logits_flip = self.model(img.flip(3))
-                    if self.mask_score:
-                        logits_flip = logits_flip[0]  # mask score unet return logits,mask_score
-                    if self.softmax:
-                        # softmax channel-wise
-                        preds_flip = torch.softmax(logits_flip, dim=1).float()
-                    else:
-                        preds_flip = torch.sigmoid(logits_flip)
-                    preds_flip = preds_flip.flip(3)
-                    preds = (preds + preds_flip) / 2.
-
-                if self.remove_black_area:
-                    # BATCH x CH x H x W -> BATCH x H x W -> BATCH x 1 x H x W
-                    not_black = (img.sum(dim=1) > 0.).unsqueeze(1).float()
-                    preds = not_black * preds
-
-                if self.use_max:
-                    preds = F.one_hot(preds.argmax(dim=1),
-                                      self.out_channel).transpose(2, 3).transpose(1, 2).float()
-
-                # TODO enable to switch
-                preds = preds[:, 1:]
-                gt_mask = gt_mask[:, 1:]
-
-                # BATCH x CH x H x W -> BATCH x H x W x CH
-                bs = preds.size(0)
-                cls_num = gt_mask.size(1)
-                preds = preds.permute((0, 2, 3, 1)).cpu().numpy()
-                gt_mask = gt_mask.permute((0, 2, 3, 1)).cpu().numpy()
-
-                preds_new = np.zeros((bs, self.test_height, self.test_width, cls_num))
-                gt_mask_new = np.zeros((bs, self.test_height, self.test_width, cls_num))
-
-                for i in range(bs):
-                    preds_new[i] = cv2.resize(
-                        preds[i], (self.test_width, self.test_height), interpolation=cv2.INTER_LINEAR)
-                    mask_tmp = cv2.resize(
-                        gt_mask[i].astype(np.float32), (self.test_width, self.test_height), interpolation=cv2.INTER_LINEAR)
-                    gt_mask_new[i] = mask_tmp
-                all_preds.append(preds_new)
-                all_masks.append(gt_mask_new)
-        return all_preds, all_masks
-
-    def validation_step(self, preds, batch_nb):
-        x, y = batch
-        logits_all, preds, preds_cls = self.pred_imgs(x)
-        loss_val = self.loss(logits_all, y)
-
-        # Test Time Augmentation
-        preds, preds_cls = self.apply_tta(x, preds, preds_cls)
-
-        if self.model_arch in  {'clsunet', 'msclsunet'}:
-            preds = self.drop_by_cls_prob(preds, preds_cls)
-
-        dice, dice_pos, dice_neg = dice_pos_neg(
-            preds, y, num_class=self.num_class,
-            top_score_thresholds=[0.7],
-            min_contour_areas=[10000],
-            bottom_score_thresholds=[0.3],
-            post_process=False,
-            skip_first_channel=self.skip_first_class
-        )
-
-        output = OrderedDict({
-            'val_loss': loss_val,
-            'dice0': dice_simple,
-            'dice': dice,
-            'dice_p': dice_pos,
-            'dice_n': dice_neg
-        })
-        return output
-
-    def valid_thres(self, thresholds):
+    def valid_thres(self, func_args):
         dice, dice_pos, dice_neg = list(), list(), list()
 
         with torch.no_grad():
             for preds, gt_mask in tqdm(zip(self.all_preds, self.all_masks), total=len(self.dataloader)):
-                bs = len(preds)
-                for i in range(bs):
-                    for j in range(4):
-                        preds_tmp = preds[i, :, :, j]
-                        preds_tmp2, num_predict = post_process(preds_tmp, thresholds[j])
-                        preds[i, :, :, j] = preds_tmp2
-
-                # BATCH x H x W x CH -> BATCH x CH x H x W
-                preds = torch.Tensor(preds).permute((0, 3, 1, 2))
-                gt_mask = torch.Tensor(gt_mask).permute((0, 3, 1, 2))
-
-                preds = preds.to(self.device)
-                gt_mask = gt_mask.to(self.device)
-
-                # Calc metrics
-                # d, d_pos, d_neg = self.metrics_func(preds, gt_mask, **func_args)
-                d, d_pos, d_neg = self.metrics_func(preds, gt_mask)
+                # TODO return metrics name
+                d, d_pos, d_neg = self.metrics_func(preds, gt_mask, **func_args)
                 dice.append(d)
                 dice_pos.append(d_pos)
                 dice_neg.append(d_neg)
@@ -211,11 +97,12 @@ def main():
     # Main logger
     logger_main = setup_logger(f'eval', output_path / f'eval_{args.kfold}_kfold.log')
 
-    # Get model and dataloader
+    # PyTorch Lightning module
+    pl_model = LightningModuleSeg(cfg)
+
+    # Get dataloader
     bs = cfg.Data.dataloader.batch_size
     cfg.Data.dataloader.batch_size = bs * len(cfg.General.gpus)
-
-    model = get_model(cfg)
     val_dataloader = get_dataloader(cfg, phase='valid')
 
     # Load trained weight
@@ -226,42 +113,40 @@ def main():
     for k, v in loaded_dict['state_dict'].items():
         new_dict[k.replace('net.', '')] = v
     logger_main.info('Load state dict')
-    model.load_state_dict(new_dict)
+    pl_model.net.load_state_dict(new_dict)
 
     # Make tester
     logger_main.info('Make valider')
-    func_args_tmp = {
-        'num_class': n_class,
-        'threshold': 0.5,
-        'skip_first_class': False,
-        'min_contour_area': 0  # threshold by post process
-    }
     valider = Verifier(
-        model=model,
+        pl_model=pl_model,
         dataloader=val_dataloader,
-        metrics_func=partial(dice_nomask, **func_args_tmp),
-        mask_score=(cfg.Model.model_arch in {'msunet', 'clsunet'}),
+        metrics_func=dice_pos_neg,
         fp16=cfg.General.fp16,
-        # tta_flip=('hflip' in cfg.Augmentation.tta),
-        tta_flip=False,
-        out_channel=cfg.Model.out_channel,
-        softmax=(cfg.Model.output == 'softmax'),
-        remove_black_area=cfg.Eval.remove_black_area
     )
 
     logger_main.info('Start eval !')
 
+    top_thresholds = [0.5, 0.6, 0.7, 0.8, 0.9]
+    bottom_thresholds = [0.1, 0.2, 0.3, 0.4, 0.5]
     min_sizes = (350 * 650 / np.arange(3.0, 6.0, 0.5) ** 2).astype(np.int).tolist()
     min_sizes = sorted(min_sizes)
+    ms = min_sizes
 
     # for top_thres, m_size in product(top_thresholds, min_sizes):
-    for thresholds in product(min_sizes, min_sizes, min_sizes, min_sizes):
-        logger_main.info(f'thresholds: {thresholds}')
+    logger_main.info(f'top_thres,min_contours,bottom_thres,dice,dice_pos,dice_neg')
+    for top_thres, bottom_thres, *min_contours in product(top_thresholds, bottom_thresholds, ms, ms, ms, ms):
+        func_args_tmp = {
+            'num_class': n_class,
+            'top_score_thresholds': [top_thres],
+            'min_contour_areas': min_contours,
+            'bottom_score_thresholds': [bottom_thres],
+            'post_process': False,
+            'skip_first_channel': valider.pl_model.skip_first_class
+        }
 
         # Eval each thresholds
-        # dice, dice_pos, dice_neg = valider.valid_thres(func_args_tmp)
-        dice, dice_pos, dice_neg = valider.valid_thres(thresholds)
-        logger_main.info(f'dice: {dice}, dice_pos: {dice_pos}, dice_neg: {dice_neg}')
+        dice, dice_pos, dice_neg = valider.valid_thres(func_args_tmp)
+        logger_main.info(f'{top_thres},{min_contours},{bottom_thres},{dice},{dice_pos},{dice_neg}')
 
 
 if __name__ == '__main__':
