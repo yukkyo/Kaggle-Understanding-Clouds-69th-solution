@@ -113,7 +113,7 @@ class LightningModuleSeg(pl.LightningModule):
         # Test Time Augmentation
         preds, preds_cls = self.apply_tta(x, preds, preds_cls)
 
-        if self.model_arch in  {'clsunet', 'msclsunet'}:
+        if self.model_arch in {'clsunet', 'msclsunet'}:
             preds = self.drop_by_cls_prob(preds, preds_cls)
 
         dice_simple = dice_pytorch((preds > 0.5).float(), y)

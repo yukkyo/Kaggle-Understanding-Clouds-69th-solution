@@ -1,9 +1,11 @@
 import argparse
 import torch
 import numpy as np
+import pandas as pd
 from pathlib import Path
 from tqdm import tqdm
 from itertools import product
+from collections import defaultdict
 
 from factory import read_yaml, get_model, get_dataloader
 from utils import src_backup, setup_logger, dice_pos_neg, dice_nomask
@@ -35,10 +37,12 @@ class Verifier:
     def _make_preds(self):
         self.all_preds = list()
         self.all_masks = list()
+        total_bs = 0
 
         with torch.no_grad():
             for batch in tqdm(self.dataloader, total=len(self.dataloader)):
                 img, gt_mask = batch
+                total_bs += gt_mask.size(0)
                 if self.fp16:
                     img = img.half()
                     gt_mask = gt_mask.half()
@@ -49,25 +53,28 @@ class Verifier:
                 _, preds, preds_cls = self.pl_model.pred_imgs(img)
                 preds, preds_cls = self.pl_model.apply_tta(img, preds, preds_cls)
 
-                self.all_preds.append(preds)
-                self.all_masks.append(gt_mask)
+                self.all_preds.append(preds.cpu())
+                self.all_masks.append(gt_mask.cpu())
+        print(f'Total size: {total_bs}')
 
     def valid_thres(self, func_args):
         dice, dice_pos, dice_neg = list(), list(), list()
 
         with torch.no_grad():
             for preds, gt_mask in tqdm(zip(self.all_preds, self.all_masks), total=len(self.dataloader)):
+                preds = preds.to(self.device)
+                gt_mask = gt_mask.to(self.device)
                 # TODO return metrics name
                 d, d_pos, d_neg = self.metrics_func(preds, gt_mask, **func_args)
                 dice.append(d)
                 dice_pos.append(d_pos)
                 dice_neg.append(d_neg)
 
-        # Mean
-        dice = torch.cat(dice, dim=0)
-        dice_pos = torch.cat(dice_pos, dim=0)
-        dice_neg = torch.cat(dice_neg, dim=0)
-        return dice.mean(), dice_pos.mean(), dice_neg.mean()
+        # Calc mean
+        dice = torch.cat(dice, dim=0).mean().cpu().item()
+        dice_pos = torch.cat(dice_pos, dim=0).mean().cpu().item()
+        dice_neg = torch.cat(dice_neg, dim=0).mean().cpu().item()
+        return dice, dice_pos, dice_neg
 
 
 def make_parse():
@@ -129,8 +136,11 @@ def main():
     top_thresholds = [0.5, 0.6, 0.7, 0.8, 0.9]
     bottom_thresholds = [0.1, 0.2, 0.3, 0.4, 0.5]
     min_sizes = (350 * 650 / np.arange(3.0, 6.0, 0.5) ** 2).astype(np.int).tolist()
+    min_sizes.append(10000)
     min_sizes = sorted(min_sizes)
     ms = min_sizes
+
+    df_dict = defaultdict(list)
 
     # for top_thres, m_size in product(top_thresholds, min_sizes):
     logger_main.info(f'top_thres,min_contours,bottom_thres,dice,dice_pos,dice_neg')
@@ -147,6 +157,16 @@ def main():
         # Eval each thresholds
         dice, dice_pos, dice_neg = valider.valid_thres(func_args_tmp)
         logger_main.info(f'{top_thres},{min_contours},{bottom_thres},{dice},{dice_pos},{dice_neg}')
+
+        # Add values to df_dict
+        for k, v in func_args_tmp.items():
+            df_dict[k].append(v)
+        df_dict['dice'].append(dice)
+        df_dict['dice_pos'].append(dice_pos)
+        df_dict['dice_neg'].append(dice_neg)
+
+    df = pd.DataFrame(df_dict)
+    df.to_csv(output_path / 'search_thres.csv', index=False)
 
 
 if __name__ == '__main__':

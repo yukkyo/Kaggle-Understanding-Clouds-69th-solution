@@ -16,7 +16,7 @@ source ~/lib/pyenv/kaggle_cloud/bin/activate
 # Source directory(ABCI)
 cd ~/kaggle/cloud-organization-2019/src
 
-model=model005
+model=model004
 conf_path=./configs/${model}.yaml
 kfold=1
 
