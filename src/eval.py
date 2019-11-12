@@ -1,6 +1,7 @@
 import argparse
 import torch
 import pandas as pd
+import numpy as np
 from pathlib import Path
 from tqdm import tqdm
 from itertools import product
@@ -135,30 +136,26 @@ def main():
 
     top_thresholds = [0.5, 0.6, 0.7]
     bottom_thresholds = [0.3, 0.4, 0.5]
-    # min_sizes = [18571, 14218, 11234, 9100, 7520, 6319]
-    # min_sizes = (350 * 650 / np.arange(3.0, 6.0, 0.5) ** 2).astype(np.int).tolist()
+
     img_area = cfg.Data.dataset.img_height * cfg.Data.dataset.img_width
-    modify_rate = img_area / (350 * 650)
-    min_sizes = {
-        0: [11234, 14218, 18571],
-        1: [9100, 7520, 6319],
-        2: [9100, 11234, 14218],
-        3: [9100, 7520, 6319],
+    min_sizes = (img_area / np.arange(3.0, 6.0, 0.5) ** 2).astype(np.int).tolist()
+    min_sizes = sorted(min_sizes)
+    min_sizes_eachclass = {
+        0: min_sizes,
+        1: min_sizes,
+        2: min_sizes,
+        3: min_sizes,
     }
-    for k, v in min_sizes.items():
-        min_sizes[k] = [int(x * modify_rate) for x in v]
 
     df_dict = defaultdict(list)
-
-    # for top_thres, m_size in product(top_thresholds, min_sizes):
     logger_main.info(f'top_thres,min_contours,bottom_thres,dice,dice_pos,dice_neg')
     combs = product(
         top_thresholds,
         bottom_thresholds,
-        min_sizes[0],
-        min_sizes[1],
-        min_sizes[2],
-        min_sizes[3],
+        min_sizes_eachclass[0],
+        min_sizes_eachclass[1],
+        min_sizes_eachclass[2],
+        min_sizes_eachclass[3]
     )
     for top_thres, bottom_thres, *min_contours in combs:
         func_args_tmp = {
