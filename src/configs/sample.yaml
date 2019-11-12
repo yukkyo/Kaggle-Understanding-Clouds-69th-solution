@@ -79,15 +79,14 @@ Loss:
             softmax: True
     # wrapper_loss: DiceScoreL2LossWrapper, ClsLossWrapper
 #    wrapper_loss:
-#        name: ClsLossWrapper
-#        params:
-#            alpha: 0.1
-#            use_focal: True
-#            use_class0_cls: True
-#        name: DiceScoreL2LossWrapper
-#        params:
-#            alpha: 0.2
-#            use_focal: True
+#        - name: ClsLossWrapper
+#          params:
+#              alpha: 0.1
+#              use_focal: True
+#              use_class0_cls: True
+#        - name: DiceScoreL2LossWrapper
+#          params:
+#              alpha: 0.2
 
 Augmentation:
     # tta: hflip, vflip
