@@ -121,7 +121,7 @@ class LightningModuleSeg(pl.LightningModule):
         dice, dice_pos, dice_neg = dice_pos_neg(
             preds, y, num_class=self.num_class,
             top_score_thresholds=[0.6],
-            min_contour_areas=[14218, 7520, 11234, 7520],
+            min_contour_areas=[12800, 8192, 10113, 10113],  # public LB 0.66
             bottom_score_thresholds=[0.4],
             post_process=False,
             skip_first_channel=self.skip_first_class
