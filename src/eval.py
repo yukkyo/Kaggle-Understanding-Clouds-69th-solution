@@ -101,7 +101,8 @@ def main():
     output_path = Path(cfg.General.workdir)
 
     # Main logger
-    logger_main = setup_logger(f'eval', output_path / f'eval_{args.kfold}_kfold.log')
+    logger_name = f'eval_{Path(args.config).stem}_{Path(args.model_path).stem}_kfold{args.kfold}.log'
+    logger_main = setup_logger(f'eval', output_path / logger_name)
 
     # PyTorch Lightning module
     pl_model = LightningModuleSeg(cfg)
@@ -181,7 +182,8 @@ def main():
         df_dict['dice_neg'].append(dice_neg)
 
     df = pd.DataFrame(df_dict)
-    df.to_csv(output_path / 'search_thres.csv', index=False)
+    fname = f'search_thres_{Path(args.config).stem}_{Path(args.model_path).stem}_kfold{args.kfold}.csv'
+    df.to_csv(output_path / fname, index=False)
 
 
 if __name__ == '__main__':
