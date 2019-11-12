@@ -7,13 +7,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from ..layers import Decoder, ConvBnRelu2d, MaskScoringHead
-from ..backbones import resnet34, resnet50, se_resnext50_32x4d, EfficientNetEncoder
+from ..backbones import resnet34, resnet50, se_resnext50_32x4d, EfficientNetEncoder, se_resnext101_32x4d
 
 
 def select_basemodel(model_name, pretrained=True):
     assumed_model_name = {
         'resnet34', 'resnet50', 'seresnext50',
-        'efficientnet-b3', 'efficientnet-b4', 'efficientnet-b5',
+        'efficientnet-b3', 'efficientnet-b4', 'efficientnet-b5', 'seresnext101'
     }
     assert model_name in assumed_model_name, f'Invalid model name: {model_name}, \n  assumed: {assumed_model_name}'
 
@@ -25,6 +25,17 @@ def select_basemodel(model_name, pretrained=True):
         planes = [256, 512, 1024, 2048]
     elif model_name == 'seresnext50':
         basemodel = se_resnext50_32x4d(pretrained='imagenet' if pretrained else None)  # TODO modify
+        planes = [256, 512, 1024, 2048]
+
+        # TODO down channel if memory is very big
+        inplanes = 64
+        basemodel.layer0 = nn.Sequential(
+            ConvBnRelu2d(3, inplanes, stride=2, padding=1),
+            ConvBnRelu2d(inplanes, inplanes, stride=2, padding=1),
+        )
+    elif model_name == 'seresnext101':
+        basemodel = se_resnext101_32x4d(pretrained='imagenet' if pretrained else None)
+        # planes = [256 // 4, 512 // 4, 1024 // 4, 2048 // 4]
         planes = [256, 512, 1024, 2048]
 
         # TODO down channel if memory is very big

@@ -39,7 +39,7 @@ Data:
             use_sampler: False
 
 Model:
-    # 'resnet50', 'efficientnet-b3', 'efficientnet-b4', 'seresnext50', 'resnet34', 'efficientnet-b5'
+    # 'resnet50', 'efficientnet-b3', 'efficientnet-b4', 'seresnext50', 'resnet34', 'efficientnet-b5', 'seresnext101'
     encoder: resnet34
     # model_arch: unet, msunet, clsunet
     model_arch: unet
