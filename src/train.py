@@ -1,6 +1,7 @@
 import shutil
 import argparse
 import torch
+import numpy as np
 import pandas as pd
 from datetime import datetime
 from collections import defaultdict
@@ -85,11 +86,28 @@ class MyModelCheckpoint(ModelCheckpoint):
         self.monitor = 'val_loss'
         self.kfold = kfold
         self.latest_path = f'{self.filepath}/kfold_{kfold}_latest.ckpt'
+        self.bestloss_path = f'{self.filepath}/kfold_{kfold}_bestloss.ckpt'
+        self.mode = 'min'
+        if self.mode == 'min':
+            self.monitor_op = np.less
+            self.best = np.Inf
+        elif self.mode == 'max':
+            self.monitor_op = np.greater
+            self.best = -np.Inf
 
     def on_epoch_end(self, epoch, logs=None):
+        logs = logs or {}
         if self.verbose > 0:
             print(f'\nSaving latest model to {self.latest_path}')
         self.save_model(self.latest_path, overwrite=False)
+
+        if self.monitor in logs:
+            current = logs[self.monitor]
+            if self.monitor_op(current, self.best):
+                self.best = current
+                if self.verbose > 0:
+                    print(f'\nSaving best model to {self.bestloss_path}')
+                self.save_model(self.bestloss_path, overwrite=False)
 
 
 def train_a_kfold(cfg, output_path):
