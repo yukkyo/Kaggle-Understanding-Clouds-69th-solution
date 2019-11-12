@@ -1,7 +1,7 @@
 #!/bin/bash
 
-#$ -l rt_G.small=1
-#$ -l h_rt=24:00:00
+#$ -l rt_G.large=1
+#$ -l h_rt=12:00:00
 #$ -j y
 #$ -cwd
 
@@ -16,8 +16,10 @@ source ~/lib/pyenv/kaggle_cloud/bin/activate
 # Source directory(ABCI)
 cd ~/kaggle/cloud-organization-2019/src
 
-model=model004
+model=model005
 conf_path=./configs/${model}.yaml
 kfold=1
 
-python eval.py --kfold ${kfold} --config ${conf_path} --model-path ../output/model/${model}/kfold_${kfold}_latest.ckpt
+python train.py \
+    --kfold ${kfold} \
+    --config ${conf_path}
