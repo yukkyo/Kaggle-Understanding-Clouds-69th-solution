@@ -113,10 +113,11 @@ class LightningModuleSeg(pl.LightningModule):
         # Test Time Augmentation
         preds, preds_cls = self.apply_tta(x, preds, preds_cls)
 
+        dice_simple = dice_pytorch((preds > 0.5).float(), y)
+
         if self.model_arch in {'clsunet', 'msclsunet'}:
             preds = self.drop_by_cls_prob(preds, preds_cls)
 
-        dice_simple = dice_pytorch((preds > 0.5).float(), y)
         dice, dice_pos, dice_neg = dice_pos_neg(
             preds, y, num_class=self.num_class,
             top_score_thresholds=[0.7],
@@ -161,7 +162,7 @@ class LightningModuleSeg(pl.LightningModule):
 
         optimizer_cls, scheduler_cls = get_optimizer(self.cfg)
 
-        optimizer = optimizer_cls(self.parameters(), lr=conf_optim.init_lr)
+        optimizer = optimizer_cls(self.parameters(), lr=conf_optim.init_lr, **conf_optim.params)
         scheduler = scheduler_cls(optimizer, **conf_optim.lr_scheduler.params)
         return [optimizer], [scheduler]
 
