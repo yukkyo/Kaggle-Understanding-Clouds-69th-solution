@@ -6,8 +6,8 @@ from tqdm import tqdm
 from itertools import product
 from collections import defaultdict
 
-from factory import read_yaml, get_model, get_dataloader
-from utils import src_backup, setup_logger, dice_pos_neg, dice_nomask
+from factory import read_yaml, get_dataloader
+from utils import setup_logger, dice_pos_neg
 from trainer import LightningModuleSeg
 
 
