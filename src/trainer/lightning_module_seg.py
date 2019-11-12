@@ -4,7 +4,7 @@ import pytorch_lightning as pl
 from collections import OrderedDict, defaultdict
 
 from factory import get_model, get_dataloader, get_loss, get_optimizer
-from utils import dice_nomask, dice_pos_neg, dice_pytorch
+from utils import dice_pos_neg, dice_pytorch
 
 
 class LightningModuleSeg(pl.LightningModule):
