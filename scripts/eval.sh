@@ -16,11 +16,18 @@ source ~/lib/pyenv/kaggle_cloud/bin/activate
 # Source directory(ABCI)
 cd ~/kaggle/cloud-organization-2019/src
 
-model=model004
+model=model013
 conf_path=./configs/${model}.yaml
 kfold=1
+mode=bestloss
 
 python eval.py \
     --kfold ${kfold} \
     --config ${conf_path} \
-    --model-path ../output/model/${model}/kfold_${kfold}_latest.ckpt
+    --model-path ../output/model/${model}/kfold_${kfold}_${mode}.ckpt
+
+mode=latest
+python eval.py \
+    --kfold ${kfold} \
+    --config ${conf_path} \
+    --model-path ../output/model/${model}/kfold_${kfold}_${mode}.ckpt
