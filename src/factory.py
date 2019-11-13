@@ -5,7 +5,7 @@ import albumentations.pytorch as albp
 from addict import Dict
 
 from loss_funcs import *
-from datasets import CloudDataset, DistributedChangeRateSampler, RandomInputBlack
+from datasets import CloudDataset, DistributedChangeRateSampler, RandomInputBlack, RandomInputBlackEllipse
 from models import select_seg_model
 
 """
