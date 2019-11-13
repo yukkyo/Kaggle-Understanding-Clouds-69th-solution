@@ -14,7 +14,7 @@ from trainer import LightningModuleSeg
 
 """
 Eval trained weight
-Search best thresholds for each class if args.find_thresholds == True
+Search best thresholds for each class
 """
 
 
@@ -102,7 +102,7 @@ def main():
     output_path = Path(cfg.General.workdir)
 
     # Main logger
-    logger_name = f'eval_{Path(args.config).stem}_{Path(args.model_path).stem}_kfold{args.kfold}.log'
+    logger_name = f'eval_{Path(args.config).stem}_{Path(args.model_path).stem}.log'
     logger_main = setup_logger(f'eval', output_path / logger_name)
 
     # PyTorch Lightning module

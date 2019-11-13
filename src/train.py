@@ -85,8 +85,8 @@ class MyModelCheckpoint(ModelCheckpoint):
         super(MyModelCheckpoint, self).__init__(**args)
         self.monitor = 'val_loss'
         self.kfold = kfold
-        self.latest_path = f'{self.filepath}/kfold_{kfold}_latest.ckpt'
-        self.bestloss_path = f'{self.filepath}/kfold_{kfold}_bestloss.ckpt'
+        self.latest_path = f'{self.filepath}/kfold_{kfold}_latest.pt'
+        self.bestloss_path = f'{self.filepath}/kfold_{kfold}_bestloss.pt'
         self.mode = 'min'
         if self.mode == 'min':
             self.monitor_op = np.less
