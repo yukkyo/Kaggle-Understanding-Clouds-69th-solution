@@ -1,3 +1,4 @@
+import os
 import shutil
 import argparse
 import torch
@@ -99,6 +100,8 @@ class MyModelCheckpoint(ModelCheckpoint):
         logs = logs or {}
         if self.verbose > 0:
             print(f'\nSaving latest model to {self.latest_path}')
+        if os.path.exists(self.latest_path):
+            os.remove(self.latest_path)
         self.save_model(self.latest_path, overwrite=False)
 
         if self.monitor in logs:
@@ -107,7 +110,10 @@ class MyModelCheckpoint(ModelCheckpoint):
                 self.best = current
                 if self.verbose > 0:
                     print(f'\nSaving best model to {self.bestloss_path}')
+                if os.path.exists(self.bestloss_path):
+                    os.remove(self.bestloss_path)
                 self.save_model(self.bestloss_path, overwrite=False)
+        print('saved !')
 
 
 def train_a_kfold(cfg, output_path):
@@ -150,7 +156,8 @@ def main():
     for key, value in cfg.items():
         print(f"    {key.ljust(30)}: {value}")
 
-    output_path = Path(cfg.General.workdir)
+    output_path = Path('../output/model') / Path(args.config).stem
+
     if args.debug:
         name_tmp = output_path.name
         output_path = Path('../output/tmp') / name_tmp

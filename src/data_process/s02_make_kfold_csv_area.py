@@ -9,9 +9,11 @@ Make kfold csv from train.csv
 
 Usage:
     $ python data_process/s01_make_kfold_csv.py
+
 """
 
 
+# TODO: implement from notebook !
 def make_parse():
     parser = argparse.ArgumentParser()
     arg = parser.add_argument
@@ -51,9 +53,6 @@ def main():
     mskf = MultilabelStratifiedKFold(n_splits=args.kfold, random_state=42)
     for i, (train_index, test_index) in enumerate(mskf.split(indxs, y)):
         df_new.loc[test_index, 'kfold'] = i + 1
-
-    col2col = {l: f'EncodedPixels_{i+1}' for i, l in enumerate(labels)}
-    df_new = df_new.rename(columns=col2col)
 
     new_path = Path(args.train_df).parent / f'train_{args.kfold}kfold.csv'
     df_new.to_csv(new_path, index=False)

@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..layers import Decoder, ConvBnRelu2d, MaskScoringHead
+from ..layers import Decoder, ConvBnRelu2d, MaskScoringHead, ASPP
 from ..backbones import resnet34, resnet50, se_resnext50_32x4d, EfficientNetEncoder, se_resnext101_32x4d
 
 
@@ -54,18 +54,18 @@ def select_basemodel(model_name, pretrained=True):
 
 class UNet(nn.Module):
     """Basic UNet with hyper columns"""
-    def __init__(self, model_name, out_channel,
-                 att_type='cbam', reduction=16, pretrained=True):
+    def __init__(self, model_name, out_channel, base_ch=32,
+                 att_type='cbam', reduction=16, pretrained=True, use_aspp=False):
         super(UNet, self).__init__()
         assert att_type is None or att_type in {'cbam'}
         self.basemodel, self.planes = select_basemodel(model_name, pretrained=pretrained)
+        self.use_aspp = use_aspp
 
         self.center = nn.Sequential(
             ConvBnRelu2d(self.planes[3], self.planes[3], kernel_size=3, padding=1),
             ConvBnRelu2d(self.planes[3], self.planes[2], kernel_size=3, padding=1),
         )
 
-        base_ch = 32
         self.base_ch = base_ch
         kwargs_decoder = {
             'attention_type': att_type, 'attention_kernel_size': 1,
@@ -77,11 +77,17 @@ class UNet(nn.Module):
         self.decoder2 = Decoder(self.planes[0] + base_ch, 64, **kwargs_decoder)
         self.decoder1 = Decoder(base_ch, 32, **kwargs_decoder)
 
-        self.final = nn.Sequential(
-            ConvBnRelu2d(base_ch*5, base_ch*2, kernel_size=3, padding=1),
-            ConvBnRelu2d(base_ch*2, base_ch, kernel_size=3, padding=1),
-            nn.Conv2d(base_ch, out_channel, kernel_size=1, padding=0),
-        )
+        if use_aspp:
+            self.aspp = ASPP(inplanes=base_ch*5, mid_c=base_ch*2, dilations=[1, 6, 12, 18])
+            self.final = nn.Sequential(
+                nn.Conv2d(base_ch*2, out_channel, kernel_size=1, padding=0),
+            )
+        else:
+            self.final = nn.Sequential(
+                ConvBnRelu2d(base_ch*5, base_ch*2, kernel_size=3, padding=1),
+                ConvBnRelu2d(base_ch*2, base_ch, kernel_size=3, padding=1),
+                nn.Conv2d(base_ch, out_channel, kernel_size=1, padding=0),
+            )
 
     def forward(self, x):
         e2, e3, e4, e5 = self.basemodel(x)  # 1/4, 1/8, 1/16, 1/32
@@ -101,21 +107,25 @@ class UNet(nn.Module):
             F.interpolate(d4, scale_factor=8,  mode='bilinear', align_corners=False),
             F.interpolate(d5, scale_factor=16, mode='bilinear', align_corners=False),
         ), 1)
+
+        if self.use_aspp:
+            f = self.aspp(f)
+
         logit = self.final(f)
         return logit
 
 
 class MSUNet(UNet):
     """UNet with Mask Scoring Head"""
-    def __init__(self, model_name, out_channel,
-                 att_type='cbam', reduction=16, pretrained=True):
+    def __init__(self, model_name, out_channel, base_ch=32,
+                 att_type='cbam', reduction=16, pretrained=True, use_aspp=False):
         super(MSUNet, self).__init__(
-            model_name=model_name, out_channel=out_channel,
-            att_type=att_type, reduction=reduction, pretrained=pretrained
+            model_name=model_name, out_channel=out_channel, base_ch=base_ch,
+            att_type=att_type, reduction=reduction, pretrained=pretrained, use_aspp=use_aspp
         )
 
         self.ms_head = MaskScoringHead(
-            in_feature_ch=self.base_ch*5,
+            in_feature_ch=self.base_ch * 2 if use_aspp else self.base_ch*5,
             num_classes=out_channel,
             mask_feature_size=(16, 32),
         )
@@ -138,8 +148,12 @@ class MSUNet(UNet):
             F.interpolate(d4, scale_factor=8,  mode='bilinear', align_corners=False),
             F.interpolate(d5, scale_factor=16, mode='bilinear', align_corners=False),
         ), 1)
+
+        if self.use_aspp:
+            f = self.aspp(f)
         logit = self.final(f)
         mask_score_logit = self.ms_head(f, logit)
+
         return logit, mask_score_logit
 
 
@@ -203,7 +217,10 @@ class ClsUNet(UNet):
 
 
 class MSClsUNet(UNet):
-    """UNet with Classification Head and Mask-Scoring Head"""
+    """
+    UNet with Classification Head and Mask-Scoring Head
+    Not Work !!!
+    """
     def __init__(self, model_name, out_channel,
                  att_type='cbam', reduction=16, pretrained=True, num_class_cls=4):
         super(MSClsUNet, self).__init__(

@@ -1,15 +1,17 @@
 General:
     comment: Sample config file
+    # TODO workdir is auto setting by config name
     workdir: ../output/model/model_sample
     seed: 20
     fp16: True
-    # Compile level for AMP
+    # Compile level for AMP, O1, O2
     amp_level: O2
     # ddp, ddp2, dp, none
     multi_gpu_mode: ddp
     labels: [Fish, Flower, Gravel, Sugar]
     gpus: [0, 1, 2, 3]
     epoch: 5
+    # Gradient accumulation option
     grad_acc: 1
     debug: False
 
@@ -27,6 +29,7 @@ Data:
         # kfold is overwritten in train.py
         kfold: -1
     dataloader:
+        # If use_sampler is True, batch size of each loader is batch_size / (number of gpus)
         batch_size: 8
         num_workers: 8
         train:
@@ -41,14 +44,16 @@ Data:
 Model:
     # 'resnet50', 'efficientnet-b3', 'efficientnet-b4', 'seresnext50', 'resnet34', 'efficientnet-b5', 'seresnext101'
     encoder: resnet34
-    # model_arch: unet, msunet, clsunet
+    # model_arch: unet, msunet, clsunet, msclsunet
     model_arch: unet
     in_channel: 3
     out_channel: 5
     pretrained: True
     decoder:
         attention: cbam
+    # This option is no mean :(
     hypercolumn: True
+    # choose in {'softmax', 'sigmoid'}
     output: softmax
 
 Optimizer:
@@ -61,6 +66,7 @@ Optimizer:
             eta_min: !!python/float 1e-5
             last_epoch: -1
 
+# No mean, implemented soon ... :(
 Metrics:
     - name: SampleDice
       params:
@@ -78,15 +84,16 @@ Loss:
             alpha: 0.7
             softmax: True
     # wrapper_loss: DiceScoreL2LossWrapper, ClsLossWrapper
-#    wrapper_loss:
-#        - name: ClsLossWrapper
-#          params:
-#              alpha: 0.1
-#              use_focal: True
-#              use_class0_cls: True
-#        - name: DiceScoreL2LossWrapper
-#          params:
-#              alpha: 0.2
+    # These loss need in clsunet or msunet
+    wrapper_loss:
+        - name: ClsLossWrapper
+          params:
+              alpha: 0.1
+              use_focal: True
+              use_class0_cls: True
+        - name: DiceScoreL2LossWrapper
+          params:
+              alpha: 0.2
 
 Augmentation:
     # tta: hflip, vflip
@@ -104,20 +111,21 @@ Augmentation:
               rotate_limit: 20
               shift_limit: 0.05
               scale_limit: 0.05
-#        - name: Compose
-#          member:
-#              - name: CenterCrop
-#                params:
-#                    p: 1.
-#                    height: 614
-#                    width: 819
-#              - name: Resize
-#                params:
-#                    p: 1.
-#                    height: 1024
-#                    width: 1024
-#          params:
-#              p: 0.5
+        # You can use Compose or OneOf
+        - name: Compose
+          member:
+              - name: CenterCrop
+                params:
+                    p: 1.
+                    height: 614
+                    width: 819
+              - name: Resize
+                params:
+                    p: 1.
+                    height: 1024
+                    width: 1024
+          params:
+              p: 0.5
         - name: OneOf
           member:
               - name: ElasticTransform

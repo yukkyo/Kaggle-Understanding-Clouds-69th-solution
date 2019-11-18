@@ -39,3 +39,4 @@ torchvision==0.4.1
 tqdm==4.36.1
 addict==2.2.1
 PyYAML==5.1.2
+iterative-stratification

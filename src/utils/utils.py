@@ -3,6 +3,7 @@ import random
 import numpy as np
 import torch
 import logging
+import cv2
 from pathlib import Path
 import shutil
 from typing import List
@@ -66,6 +67,7 @@ def seed_everything(seed=73):
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
+    # torch.backends.cudnn.benchmark = False  # TODO is it need ?
 
 
 def setup_logger(logger_name, log_file, level=logging.INFO, null_format=False):
@@ -90,3 +92,30 @@ def src_backup(input_dir: Path, output_dir: Path):
     for src_path in input_dir.glob("**/*.py"):
         new_path = output_dir / src_path.name
         shutil.copy2(str(src_path), str(new_path))
+
+
+def triplet_thresholds(prob: np.ndarray, top: float,
+                       min_area: int, bottom: float):
+    area = (prob > top).sum()
+    if area < min_area:
+        prob[:] = 0
+        return prob
+    return (prob > bottom).astype(np.float)
+
+
+def post_process(probability, threshold=0.6, min_size=10000):
+    """
+    Post processing of each predicted mask, components with lesser number of pixels
+    than `min_size` are ignored
+    """
+    # don't remember where I saw it
+    mask = cv2.threshold(probability, threshold, 1, cv2.THRESH_BINARY)[1]
+    num_component, component = cv2.connectedComponents(mask.astype(np.uint8))
+    predictions = np.zeros((350, 525), np.float32)
+    num = 0
+    for c in range(1, num_component):
+        p = (component == c)
+        if p.sum() > min_size:
+            predictions[p] = 1
+            num += 1
+    return predictions, num

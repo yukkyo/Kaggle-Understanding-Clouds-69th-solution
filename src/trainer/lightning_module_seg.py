@@ -23,7 +23,10 @@ class LightningModuleSeg(pl.LightningModule):
         self.net = get_model(cfg)
         self.loss = get_loss(cfg)
         self.metrics_keys = ['dice0', 'dice', 'dice_p', 'dice_n']
+        self.tta_enable = {'hflip', 'vflip', 'rotate90', 'rotate180'}
         self.tta = set(cfg.Augmentation.tta)  # ex. {'hflip', 'vflip'}
+        self.applied_tta_num = len(self.tta & self.tta_enable)
+        print(f'Applied TTA: {self.tta & self.tta_enable}')
         self.pred_cls_thres = 0.6
 
     def forward(self, x):
@@ -81,28 +84,36 @@ class LightningModuleSeg(pl.LightningModule):
         return logits_origin, preds, preds_cls
 
     def apply_tta(self, x, preds, preds_cls=None):
-        if ('hflip' not in self.tta) and ('vflip' not in self.tta):
+        if self.applied_tta_num == 0:
             return preds, preds_cls
 
-        tta_count = 1.
-
         if 'hflip' in self.tta:
-            tta_count += 1
             _, preds_hflip, preds_cls_hflip = self.pred_imgs(x.flip(3))
             preds += preds_hflip.flip(3)
             if preds_cls is not None:
                 preds_cls += preds_cls_hflip
 
         if 'vflip' in self.tta:
-            tta_count += 1
             _, preds_vflip, preds_cls_vflip = self.pred_imgs(x.flip(2))
             preds += preds_vflip.flip(2)
             if preds_cls is not None:
                 preds_cls += preds_cls_vflip
 
-        preds /= tta_count
+        if 'rotate180' in self.tta:
+            _, preds_vflip, preds_cls_vflip = self.pred_imgs(x.flip([2, 3]))
+            preds += preds_vflip.flip([2, 3])
+            if preds_cls is not None:
+                preds_cls += preds_cls_vflip
+
+        if 'rotate90' in self.tta:
+            _, preds_vflip, preds_cls_vflip = self.pred_imgs(x.transpose(2, 3))
+            preds += preds_vflip.transpose(2, 3)
+            if preds_cls is not None:
+                preds_cls += preds_cls_vflip
+
+        preds /= (self.applied_tta_num + 1)
         if preds_cls is not None:
-            preds_cls /= tta_count
+            preds_cls /= (self.applied_tta_num + 1)
         return preds, preds_cls
 
     def validation_step(self, batch, batch_nb):
@@ -115,13 +126,16 @@ class LightningModuleSeg(pl.LightningModule):
 
         dice_simple = dice_pytorch((preds > 0.5).float(), y)
 
+        min_contour_areas = [12000, 10000, 10000, 8000]
         if self.model_arch in {'clsunet', 'msclsunet'}:
+            min_contour_areas = [5000, 5000, 5000, 5000]
             preds = self.drop_by_cls_prob(preds, preds_cls)
 
         dice, dice_pos, dice_neg = dice_pos_neg(
             preds, y, num_class=self.num_class,
             top_score_thresholds=[0.6],
-            min_contour_areas=[12800, 8192, 10113, 10113],  # public LB 0.66
+            # min_contour_areas=[8192, 8192, 8192, 10113],  # public LB 0.66
+            min_contour_areas=min_contour_areas,
             bottom_score_thresholds=[0.4],
             post_process=False,
             skip_first_channel=self.skip_first_class
@@ -132,7 +146,7 @@ class LightningModuleSeg(pl.LightningModule):
             'dice0': dice_simple,
             'dice': dice,
             'dice_p': dice_pos,
-            'dice_n': dice_neg
+            'dice_n': dice_neg,
         })
         return output
 
@@ -163,7 +177,10 @@ class LightningModuleSeg(pl.LightningModule):
         optimizer_cls, scheduler_cls = get_optimizer(self.cfg)
 
         optimizer = optimizer_cls(self.parameters(), lr=conf_optim.init_lr, **conf_optim.params)
-        scheduler = scheduler_cls(optimizer, **conf_optim.lr_scheduler.params)
+        if scheduler_cls is None:
+            return [optimizer]
+        else:
+            scheduler = scheduler_cls(optimizer, **conf_optim.lr_scheduler.params)
         return [optimizer], [scheduler]
 
     @pl.data_loader

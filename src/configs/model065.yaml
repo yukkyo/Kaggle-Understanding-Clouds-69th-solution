@@ -1,0 +1,124 @@
+General:
+    comment: efficientnet-b5, msunet, copy from model017, add rotate180
+    seed: 42
+    fp16: True
+    amp_level: O2
+    multi_gpu_mode: ddp
+    labels: [Fish, Flower, Gravel, Sugar]
+    gpus: [0, 1, 2, 3]
+    epoch: 30
+    debug: False
+    grad_acc: 4
+
+Data:
+    dataset:
+        background_class: True
+        train_df: ../input/train_5kfold.csv
+        train_img_dir: ../input/train_images
+        test_df: ../input/sample_submission.csv
+        test_img_dir: ../input/test_images
+        img_height: 320
+        img_width: 640
+        kfold: -1
+    dataloader:
+        batch_size: 32
+        num_workers: 8
+        train:
+            use_sampler: True
+            change_rate_sampler: False
+            max_pos_rate: 1.0
+        valid:
+            use_sampler: False
+        test:
+            use_sampler: False
+
+Model:
+    encoder: efficientnet-b5
+    model_arch: msunet
+    in_channel: 3
+    out_channel: 4
+    base_ch: 32
+    use_aspp: False
+    pretrained: True
+    decoder:
+        attention: cbam
+    hypercolumn: True
+    output: sigmoid
+
+Optimizer:
+    optimizer: Adam
+    init_lr: !!python/float 5e-4
+    lr_scheduler:
+        name: CosineAnnealingLR
+        params:
+            T_max: 30
+            eta_min: !!python/float 1e-5
+            last_epoch: -1
+
+Loss:
+    base_loss:
+        name: BCEDiceFocalLoss
+        params:
+            r_d: 1.
+            r_b: 0.5
+            r_f: 1.
+            softmax: False
+    wrapper_loss:
+        - name: DiceScoreL2LossWrapper
+          params:
+              alpha: 0.3
+
+Augmentation:
+    tta: [hflip, vflip]
+    train:
+        - name: HorizontalFlip
+          params:
+              p: 0.5
+        - name: VerticalFlip
+          params:
+              p: 0.5
+        - name: Compose
+          # Rotate 180 degree
+          member:
+              - name: HorizontalFlip
+                params:
+                    p: 1.
+              - name: VerticalFlip
+                params:
+                    p: 1.
+          params:
+              p: 0.5
+        - name: RandomInputBlack
+          params:
+              sl: 0.1
+              sh: 0.3
+              r1: 0.3
+              r2: !!python/object/apply:eval [ '1 / 0.3' ]
+              img_h: 1400
+              img_w: 2100
+              p: 0.3
+        - name: RandomSizedCrop
+          params:
+              min_max_height: !!python/object/apply:eval [ '(int(1400 * 0.8), 1400)' ]
+              height: 1400
+              width: 2100
+              # w2h_ratio = width / height
+              w2h_ratio: !!python/object/apply:eval [ '2100 / 1400' ]
+              interpolation: 1
+              p: 0.5
+        - name: ShiftScaleRotate
+          params:
+              scale_limit: 0.5
+              rotate_limit: 0
+              shift_limit: 0.1
+              border_mode: 0
+              p: 0.5
+        - name: GridDistortion
+          params:
+              p: 0.5
+        - name: OpticalDistortion
+          params:
+             distort_limit: 2
+             shift_limit: 0.5
+             p: 0.5
+    valid:

@@ -115,7 +115,9 @@ def get_model(conf):
         encoder_type=conf.Model.encoder,
         num_class_seg=conf.Model.out_channel,
         num_class_cls=num_class,
-        pretrained=conf.Model.pretrained
+        pretrained=conf.Model.pretrained,
+        base_ch=conf.Model.base_ch,
+        use_aspp=conf.Model.use_aspp
     )
     return model
 
@@ -138,10 +140,13 @@ def get_optimizer(conf):
         torch.optim, conf_optim.optimizer
     )
 
-    scheduler_cls = getattr(
-        torch.optim.lr_scheduler,
-        conf_optim.lr_scheduler.name
-    )
+    if not hasattr(conf_optim, 'lr_schrduler'):
+        scheduler_cls = getattr(
+            torch.optim.lr_scheduler,
+            conf_optim.lr_scheduler.name
+        )
+    else:
+        scheduler_cls = None
     return optimizer_cls, scheduler_cls
 
 

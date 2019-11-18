@@ -5,11 +5,15 @@ def select_seg_model(model_arch: str,
                      encoder_type: str,
                      num_class_seg: int,
                      num_class_cls: int,
+                     base_ch: int,
+                     use_aspp=False,
                      pretrained=True):
     args_model = {
         'model_name': encoder_type,
         'out_channel': num_class_seg,
-        'pretrained': pretrained
+        'pretrained': pretrained,
+        'use_aspp': use_aspp,
+        'base_ch': base_ch
     }
     if model_arch == 'unet':
         return UNet(**args_model)
