@@ -51,25 +51,25 @@ def main():
     # min_areas = [12500, 12500, 10000, 6000]  # Model 052 best, after add, 0.647366
     # min_areas = [14000., 10500., 9000., 8100.]  # Model 052 best, 0.6494966864585876
 
-    min_areas = [17500, 10000, 10000, 5000]  # Model 056 best, after add, 	0.647339
+    # min_areas = [17500, 10000, 10000, 5000]  # Model 056 best, after add, 	0.647339
     # min_areas = [16000.0, 10500.0, 10000.0, 7000.0]  # Model 056 best, 0.64889
 
-    min_areas = [15000, 11250, 10000, 5500]  # mean of after add 052, 056
+    # min_areas = [15000, 11250, 10000, 5500]  # mean of after add 052, 056
 
-    # min_areas = [7500, 12500, 7500, 12500]  # Model 022 best
-    top_score_thresholds = 0.6
-    bottom_score_thresholds = 0.4
+    # # min_areas = [7500, 12500, 7500, 12500]  # Model 022 best
+    # top_score_thresholds = 0.6
+    # bottom_score_thresholds = 0.4
 
-    # Best 059 model after add, 0.648148
-    top_score_thresholds = 0.6
-    bottom_score_thresholds = 0.45
-    min_areas = [17500, 10000, 10000, 10000]  # mean of after add 052, 056
+    # # Best 059 model after add, 0.648148
+    # top_score_thresholds = 0.6
+    # bottom_score_thresholds = 0.45
+    # min_areas = [17500, 10000, 10000, 10000]  # mean of after add 052, 056
 
-    # average of 052 and 059
-    top_score_thresholds = 0.6
-    bottom_score_thresholds = 0.45
-    min_areas = [17500, 10000, 10000, 7500]  # mean of after add 052, 059
-    min_areas = [25000, 12500, 12500, 7500]  # mean of after add 052, 059
+    # # average of 052 and 059
+    # top_score_thresholds = 0.6
+    # bottom_score_thresholds = 0.45
+    # min_areas = [17500, 10000, 10000, 7500]  # mean of after add 052, 059
+    # min_areas = [25000, 12500, 12500, 7500]  # mean of after add 052, 059
 
     # # best 063
     # top_score_thresholds = 0.6
@@ -81,10 +81,10 @@ def main():
     # bottom_score_thresholds = 0.45
     # min_areas = [15000, 12500, 7500, 5000]
 
-    # # best average of 063, 064
-    # top_score_thresholds = 0.625
-    # bottom_score_thresholds = 0.425
-    # min_areas = [16250, 13750, 10000, 5000]
+    # best average of 063, 064
+    top_score_thresholds = 0.625
+    bottom_score_thresholds = 0.425
+    min_areas = [16250, 13750, 10000, 5000]
 
     thres_func = partial(triplet_thresholds, top=top_score_thresholds, bottom=bottom_score_thresholds)
 
