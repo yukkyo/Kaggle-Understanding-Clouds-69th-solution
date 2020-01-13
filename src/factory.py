@@ -140,7 +140,7 @@ def get_optimizer(conf):
         torch.optim, conf_optim.optimizer
     )
 
-    if not hasattr(conf_optim, 'lr_schrduler'):
+    if hasattr(conf_optim, 'lr_scheduler'):
         scheduler_cls = getattr(
             torch.optim.lr_scheduler,
             conf_optim.lr_scheduler.name
