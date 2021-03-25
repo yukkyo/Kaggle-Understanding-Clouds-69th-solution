@@ -38,5 +38,5 @@ torchcontrib==0.0.2
 torchvision==0.4.1
 tqdm==4.36.1
 addict==2.2.1
-PyYAML==5.1.2
+PyYAML==5.4
 iterative-stratification
