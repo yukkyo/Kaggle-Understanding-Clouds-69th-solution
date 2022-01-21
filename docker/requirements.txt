@@ -8,7 +8,7 @@ efficientnet-pytorch
 fastprogress==0.1.21
 hyperopt==0.2.1
 imgaug==0.3.0
-ipython==7.6.1
+ipython==7.16.3
 jupyterlab
 jupyterlab-server
 kaggle==1.5.6
