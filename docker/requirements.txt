@@ -15,7 +15,7 @@ kaggle==1.5.6
 lightgbm==2.3.0
 matplotlib==3.1.1
 numba==0.46.0
-numpy==1.17.3
+numpy==1.22.0
 opencv-python==4.1.1.26
 opencv-python-headless==4.1.1.26
 optuna==0.17.1
